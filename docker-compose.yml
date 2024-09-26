@@ -1,0 +1,40 @@
+version: "3.8"
+services:
+  db:
+    container_name: codeCache-pg-container
+    image: postgres:16
+    restart: always
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=codecache
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./codeCache-pgdata:/var/lib/codeCache-postgresql/data
+    networks:
+      - codeCache
+
+  mongo:
+    container_name: codeCache-mongo-container
+    image: mongo
+    restart: always
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=root
+      - MONGO_INITDB_ROOT_PASSWORD=password
+      - MONGO_INITDB_DATABASE=codecache
+    ports:
+      - "27017:27017"
+    volumes:
+      - ./codeCache-mongodata:/data/db
+    networks:
+      - codeCache
+
+volumes:
+  codeCache-pgdata:
+  codeCache-mongodata:
+
+networks:
+  codeCache:
+    name: codeCache
+    driver: bridge
