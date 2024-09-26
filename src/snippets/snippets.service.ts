@@ -156,6 +156,71 @@ export class SnippetsService {
       .exec();
   }
 
+  async updateSavedSnippets(
+    userId: string,
+    snippetId: string,
+    add: boolean,
+  ): Promise<void> {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException("User not found");
+
+    if (add) {
+      // Add the snippet to savedSnippetIds if it's not already there
+      if (!user.savedSnippetIds.includes(snippetId)) {
+        user.savedSnippetIds = [...user.savedSnippetIds, snippetId];
+      }
+    } else {
+      // Remove the snippet from savedSnippetIds if it exists
+      user.savedSnippetIds = user.savedSnippetIds.filter(
+        (id) => id !== snippetId,
+      );
+    }
+
+    await this.userRepository.save(user);
+  }
+
+  async getSavedSnippets(
+    userId: string,
+    page: number = 1,
+    limit: number = 10,
+    search?: string,
+    tags?: string[],
+    language?: string,
+  ): Promise<{
+    snippets: Snippet[];
+    total: number;
+    page: number;
+    limit: number;
+  }> {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException("User not found");
+
+    const query: any = {
+      _id: { $in: user.savedSnippetIds },
+    };
+
+    if (search) {
+      query.$text = { $search: search };
+    }
+
+    if (tags && tags.length > 0) {
+      query.tags = { $in: tags };
+    }
+
+    if (language) {
+      query.language = language;
+    }
+
+    const total = await this.snippetModel.countDocuments(query);
+    const snippets = await this.snippetModel
+      .find(query)
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .exec();
+
+    return { snippets, total, page, limit };
+  }
+
   private validateUserId(userId: string): void {
     if (!userId || !uuidValidate(userId)) {
       throw new BadRequestException("Invalid user ID");

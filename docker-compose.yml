@@ -17,7 +17,7 @@ services:
 
   mongo:
     container_name: codeCache-mongo-container
-    image: mongo
+    image: mongo:8.0
     restart: always
     environment:
       - MONGO_INITDB_ROOT_USERNAME=root

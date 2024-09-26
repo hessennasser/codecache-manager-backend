@@ -54,4 +54,7 @@ export class User {
 
   @Column("simple-array", { nullable: true })
   snippetIds: string[];
+
+  @Column("simple-array", { nullable: true })
+  savedSnippetIds: string[];
 }

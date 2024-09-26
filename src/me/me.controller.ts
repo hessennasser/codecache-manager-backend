@@ -5,6 +5,7 @@ import {
   Get,
   NotFoundException,
   Param,
+  Patch,
   Post,
   Put,
   Query,
@@ -137,5 +138,60 @@ export class MeController {
       );
     }
     return { message: "Snippet deleted successfully" };
+  }
+
+  @Patch("snippets/:id/save")
+  @ApiOperation({ summary: "Add or remove a snippet from saved snippets" })
+  @ApiResponse({
+    status: 200,
+    description: "Snippet has been successfully updated in saved snippets",
+  })
+  @ApiResponse({
+    status: 404,
+    description: "Snippet not found or you do not have permission",
+  })
+  async updateSavedSnippets(
+    @Request() req,
+    @Param("id") snippetId: string,
+    @Query("action") action: "add" | "remove",
+  ) {
+    const userId = req.user.sub;
+    const addSnippet = action === "add";
+
+    await this.snippetsService.updateSavedSnippets(
+      userId,
+      snippetId,
+      addSnippet,
+    );
+
+    return {
+      message: `Snippet ${addSnippet ? "added to" : "removed from"} saved snippets successfully`,
+    };
+  }
+
+  @Get("users/:userId/saved-snippets")
+  @ApiOperation({ summary: "Get saved snippets for a user" })
+  @ApiResponse({
+    status: 200,
+    description: "Successfully retrieved saved snippets",
+  })
+  @ApiResponse({ status: 404, description: "User not found" })
+  async getSavedSnippets(
+    @Param("userId") userId: string,
+    @Query("page") page: number = 1,
+    @Query("limit") limit: number = 10,
+    @Query("search") search?: string,
+    @Query("tags") tags?: string[],
+    @Query("language") language?: string,
+  ) {
+    const savedSnippets = await this.snippetsService.getSavedSnippets(
+      userId,
+      page,
+      limit,
+      search,
+      tags,
+      language,
+    );
+    return savedSnippets;
   }
 }
