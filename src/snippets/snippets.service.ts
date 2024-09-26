@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ConflictException,
 } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
@@ -24,14 +25,9 @@ export class SnippetsService {
     userId: string,
     createSnippetDto: CreateSnippetDto,
   ): Promise<Snippet> {
-    if (!userId || !uuidValidate(userId)) {
-      throw new BadRequestException("Invalid user ID");
-    }
+    this.validateUserId(userId);
 
-    const user = await this.userRepository.findOne({ where: { id: userId } });
-    if (!user) {
-      throw new NotFoundException("User not found");
-    }
+    const user = await this.findUserById(userId);
 
     const newSnippet = new this.snippetModel({
       ...createSnippetDto,
@@ -39,18 +35,7 @@ export class SnippetsService {
     });
     const savedSnippet = await newSnippet.save();
 
-    // Update user's snippetIds in PostgreSQL
-    const snippetIds = user.snippetIds
-      ? [...user.snippetIds, savedSnippet.id.toString()]
-      : [savedSnippet.id.toString()];
-
-    try {
-      await this.userRepository.update(userId, { snippetIds });
-    } catch (error) {
-      // If updating user fails, delete the saved snippet to maintain consistency
-      await this.snippetModel.findByIdAndDelete(savedSnippet.id);
-      throw new BadRequestException("Failed to update user with new snippet");
-    }
+    await this.updateUserSnippetList(user, savedSnippet.id.toString(), "add");
 
     return savedSnippet;
   }
@@ -67,32 +52,8 @@ export class SnippetsService {
     page: number;
     limit: number;
   }> {
-    const query: any = {};
-
-    if (search) {
-      query.$or = [
-        { title: { $regex: search, $options: "i" } },
-        { description: { $regex: search, $options: "i" } },
-        { content: { $regex: search, $options: "i" } },
-      ];
-    }
-
-    if (tags && tags.length > 0) {
-      query.tags = { $in: tags };
-    }
-
-    if (language) {
-      query.language = language;
-    }
-
-    const total = await this.snippetModel.countDocuments(query);
-    const snippets = await this.snippetModel
-      .find(query)
-      .skip((page - 1) * limit)
-      .limit(limit)
-      .exec();
-
-    return { snippets, total, page, limit };
+    const query = this.buildSnippetQuery(search, tags, language);
+    return this.paginateSnippets(query, page, limit, search);
   }
 
   async getSnippetsByUserId(
@@ -108,38 +69,9 @@ export class SnippetsService {
     page: number;
     limit: number;
   }> {
-    if (!uuidValidate(userId)) {
-      throw new BadRequestException("Invalid user ID");
-    }
-    const query: any = { userId };
-
-    if (search) {
-      query.$or = [
-        { title: { $regex: search, $options: "i" } },
-        { description: { $regex: search, $options: "i" } },
-        { content: { $regex: search, $options: "i" } },
-      ];
-    }
-
-    if (tags && tags.length > 0) {
-      query.tags = { $in: tags };
-    }
-
-    if (language) {
-      query.language = language;
-    }
-
-    const total = await this.snippetModel.countDocuments({
-      userId,
-    });
-
-    const snippets = await this.snippetModel
-      .find(query)
-      .skip((page - 1) * limit)
-      .limit(limit)
-      .exec();
-
-    return { snippets, total, page, limit };
+    this.validateUserId(userId);
+    const query = this.buildSnippetQuery(search, tags, language, userId);
+    return this.paginateSnippets(query, page, limit, search);
   }
 
   async getSnippetById(id: string): Promise<Snippet> {
@@ -155,9 +87,7 @@ export class SnippetsService {
     id: string,
     updateSnippetDto: UpdateSnippetDto,
   ): Promise<Snippet> {
-    if (!uuidValidate(userId)) {
-      throw new BadRequestException("Invalid user ID");
-    }
+    this.validateUserId(userId);
 
     const updatedSnippet = await this.snippetModel
       .findOneAndUpdate(
@@ -177,9 +107,7 @@ export class SnippetsService {
   }
 
   async deleteSnippet(userId: string, id: string): Promise<Snippet> {
-    if (!uuidValidate(userId)) {
-      throw new BadRequestException("Invalid user ID");
-    }
+    this.validateUserId(userId);
 
     const deletedSnippet = await this.snippetModel
       .findOneAndDelete({
@@ -194,17 +122,130 @@ export class SnippetsService {
       );
     }
 
-    // Update user's snippetIds in PostgreSQL
-    const user = await this.userRepository.findOne({ where: { id: userId } });
-    if (user) {
-      const updatedSnippetIds = user.snippetIds.filter(
-        (snippetId) => snippetId !== id,
-      );
-      await this.userRepository.update(userId, {
-        snippetIds: updatedSnippetIds,
-      });
-    }
+    const user = await this.findUserById(userId);
+    await this.updateUserSnippetList(user, id, "remove");
 
     return deletedSnippet;
+  }
+
+  async incrementSnippetViews(id: string): Promise<Snippet> {
+    const updatedSnippet = await this.snippetModel
+      .findByIdAndUpdate(id, { $inc: { viewCount: 1 } }, { new: true })
+      .exec();
+
+    if (!updatedSnippet) {
+      throw new NotFoundException("Snippet not found");
+    }
+
+    return updatedSnippet;
+  }
+
+  async getPopularSnippets(limit: number = 10): Promise<Snippet[]> {
+    return this.snippetModel
+      .find({ isPublic: true })
+      .sort({ viewCount: -1 })
+      .limit(limit)
+      .exec();
+  }
+
+  async getRecentSnippets(limit: number = 10): Promise<Snippet[]> {
+    return this.snippetModel
+      .find({ isPublic: true })
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .exec();
+  }
+
+  private validateUserId(userId: string): void {
+    if (!userId || !uuidValidate(userId)) {
+      throw new BadRequestException("Invalid user ID");
+    }
+  }
+
+  private async findUserById(userId: string): Promise<User> {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException("User not found");
+    }
+    return user;
+  }
+
+  private async updateUserSnippetList(
+    user: User,
+    snippetId: string,
+    operation: "add" | "remove",
+  ): Promise<void> {
+    const snippetIds = user.snippetIds || [];
+
+    if (operation === "add") {
+      snippetIds.push(snippetId);
+    } else {
+      const index = snippetIds.indexOf(snippetId);
+      if (index > -1) {
+        snippetIds.splice(index, 1);
+      }
+    }
+
+    try {
+      await this.userRepository.update(user.id, { snippetIds });
+    } catch (error) {
+      if (operation === "add") {
+        await this.snippetModel.findByIdAndDelete(snippetId);
+      }
+      throw new ConflictException("Failed to update user's snippet list");
+    }
+  }
+
+  private buildSnippetQuery(
+    search?: string,
+    tags?: string[],
+    language?: string,
+    userId?: string,
+  ): any {
+    const query: any = {};
+
+    if (userId) {
+      query.userId = userId;
+    }
+
+    if (search) {
+      query.$text = { $search: search };
+    }
+
+    if (tags && tags.length > 0) {
+      query.tags = { $in: tags };
+    }
+
+    if (language) {
+      query.language = language;
+    }
+
+    return query;
+  }
+
+  private async paginateSnippets(
+    query: any,
+    page: number,
+    limit: number,
+    search?: string,
+  ): Promise<{
+    snippets: Snippet[];
+    total: number;
+    page: number;
+    limit: number;
+  }> {
+    const total = await this.snippetModel.countDocuments(query);
+    let snippetQuery = this.snippetModel.find(query);
+
+    if (search) {
+      snippetQuery = snippetQuery.sort({ score: { $meta: "textScore" } });
+    }
+
+    const snippets = await snippetQuery
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .exec();
+
+    return { snippets, total, page, limit };
   }
 }

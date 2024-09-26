@@ -7,17 +7,26 @@ import {
   Param,
   Post,
   Put,
-  Req,
+  Query,
   Request,
   UseGuards,
 } from "@nestjs/common";
 import { UsersService } from "../users/users.service";
 import { SnippetsService } from "../snippets/snippets.service";
-import { JwtAuthGuard } from "src/auth/guards/jwt-auth.guard";
-import { ApiBearerAuth } from "@nestjs/swagger";
-import { UpdateSnippetDto } from "src/snippets/dto/update-snippet.dto";
-import { CreateSnippetDto } from "src/snippets/dto/create-snippet.dto";
+import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
+import {
+  ApiBearerAuth,
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiQuery,
+} from "@nestjs/swagger";
+import { UpdateSnippetDto } from "../snippets/dto/update-snippet.dto";
+import { CreateSnippetDto } from "../snippets/dto/create-snippet.dto";
+import { Snippet } from "../snippets/schemas/snippet.schema";
+import { User } from "../users/entities/user.entity";
 
+@ApiTags("me")
 @Controller("me")
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
@@ -28,18 +37,55 @@ export class MeController {
   ) {}
 
   @Get()
+  @ApiOperation({ summary: "Get user profile" })
+  @ApiResponse({
+    status: 200,
+    description: "Return the user profile",
+    type: User,
+  })
   async getProfile(@Request() req) {
     const userId = req.user.sub;
     return this.usersService.findOne(userId);
   }
 
   @Get("snippets")
-  async getMySnippets(@Request() req) {
+  @ApiOperation({ summary: "Get user's snippets" })
+  @ApiResponse({
+    status: 200,
+    description: "Return user's snippets",
+    type: [Snippet],
+  })
+  @ApiQuery({ name: "page", required: false, type: Number })
+  @ApiQuery({ name: "limit", required: false, type: Number })
+  @ApiQuery({ name: "search", required: false, type: String })
+  @ApiQuery({ name: "tags", required: false, type: [String], isArray: true })
+  @ApiQuery({ name: "language", required: false, type: String })
+  async getMySnippets(
+    @Request() req,
+    @Query("page") page: number = 1,
+    @Query("limit") limit: number = 10,
+    @Query("search") search?: string,
+    @Query("tags") tags?: string[],
+    @Query("language") language?: string,
+  ) {
     const userId = req.user.sub;
-    return this.snippetsService.getSnippetsByUserId(userId);
+    return this.snippetsService.getSnippetsByUserId(
+      userId,
+      page,
+      limit,
+      search,
+      tags,
+      language,
+    );
   }
 
-  @Post("snippet")
+  @Post("snippets")
+  @ApiOperation({ summary: "Create a new snippet" })
+  @ApiResponse({
+    status: 201,
+    description: "The snippet has been successfully created",
+    type: Snippet,
+  })
   async createSnippet(
     @Request() req,
     @Body() createSnippetDto: CreateSnippetDto,
@@ -48,14 +94,22 @@ export class MeController {
     return this.snippetsService.createSnippet(userId, createSnippetDto);
   }
 
-  @Put("snippet/:id")
+  @Put("snippets/:id")
+  @ApiOperation({ summary: "Update a snippet" })
+  @ApiResponse({
+    status: 200,
+    description: "The snippet has been successfully updated",
+    type: Snippet,
+  })
+  @ApiResponse({ status: 404, description: "Snippet not found" })
   async updateSnippet(
     @Request() req,
     @Param("id") id: string,
     @Body() updateSnippetDto: UpdateSnippetDto,
   ) {
+    const userId = req.user.sub;
     const updatedSnippet = await this.snippetsService.updateSnippet(
-      req.user.id,
+      userId,
       id,
       updateSnippetDto,
     );
@@ -67,12 +121,16 @@ export class MeController {
     return updatedSnippet;
   }
 
-  @Delete("snippet/:id")
+  @Delete("snippets/:id")
+  @ApiOperation({ summary: "Delete a snippet" })
+  @ApiResponse({
+    status: 200,
+    description: "The snippet has been successfully deleted",
+  })
+  @ApiResponse({ status: 404, description: "Snippet not found" })
   async deleteSnippet(@Request() req, @Param("id") id: string) {
-    const deletedSnippet = await this.snippetsService.deleteSnippet(
-      req.user.id,
-      id,
-    );
+    const userId = req.user.sub;
+    const deletedSnippet = await this.snippetsService.deleteSnippet(userId, id);
     if (!deletedSnippet) {
       throw new NotFoundException(
         "Snippet not found or you do not have permission to delete it",
