@@ -90,17 +90,4 @@ export class SnippetsController {
     }
     return snippet;
   }
-
-  @Get(":id/view")
-  @UseGuards(JwtAuthGuard)
-  @ApiOperation({ summary: "Increment snippet view count" })
-  @ApiResponse({
-    status: 200,
-    description: "Return the updated snippet",
-    type: Snippet,
-  })
-  @ApiResponse({ status: 404, description: "Snippet not found" })
-  async incrementSnippetViews(@Param("id") id: string) {
-    return this.snippetsService.incrementSnippetViews(id);
-  }
 }

@@ -79,6 +79,7 @@ export class SnippetsService {
     if (!snippet) {
       throw new NotFoundException("Snippet not found");
     }
+    await this.incrementSnippetViews(snippet.id);
     return snippet;
   }
 
@@ -126,18 +127,6 @@ export class SnippetsService {
     await this.updateUserSnippetList(user, id, "remove");
 
     return deletedSnippet;
-  }
-
-  async incrementSnippetViews(id: string): Promise<Snippet> {
-    const updatedSnippet = await this.snippetModel
-      .findByIdAndUpdate(id, { $inc: { viewCount: 1 } }, { new: true })
-      .exec();
-
-    if (!updatedSnippet) {
-      throw new NotFoundException("Snippet not found");
-    }
-
-    return updatedSnippet;
   }
 
   async getPopularSnippets(limit: number = 10): Promise<Snippet[]> {
@@ -219,6 +208,18 @@ export class SnippetsService {
       .exec();
 
     return { snippets, total, page, limit };
+  }
+
+  private async incrementSnippetViews(id: string): Promise<Snippet> {
+    const updatedSnippet = await this.snippetModel
+      .findByIdAndUpdate(id, { $inc: { viewCount: 1 } }, { new: true })
+      .exec();
+
+    if (!updatedSnippet) {
+      throw new NotFoundException("Snippet not found");
+    }
+
+    return updatedSnippet;
   }
 
   private validateUserId(userId: string): void {
