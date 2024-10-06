@@ -46,7 +46,8 @@ export class MeController {
   })
   async getProfile(@Request() req) {
     const userId = req.user.sub;
-    return this.usersService.findOne(userId);
+    const user = await this.usersService.findOne(userId);
+    return { user };
   }
 
   @Get("snippets")
