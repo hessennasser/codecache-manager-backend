@@ -10,12 +10,15 @@ import {
   ValidationPipe,
   UploadedFiles,
   UseInterceptors,
+  Request,
+  Put,
 } from "@nestjs/common";
 import { AuthService } from "./auth.service";
 import { LoginDto } from "./dto/login.dto";
 import { ApiTags, ApiResponse, ApiBearerAuth } from "@nestjs/swagger";
 import { JwtAuthGuard } from "./guards/jwt-auth.guard";
 import { AnyFilesInterceptor } from "@nestjs/platform-express";
+import { UsersService } from "src/users/users.service";
 
 /**
  * AuthController
@@ -28,7 +31,10 @@ import { AnyFilesInterceptor } from "@nestjs/platform-express";
 @UsePipes(new ValidationPipe({ whitelist: true }))
 @Controller("auth")
 export class AuthController {
-  constructor(private authService: AuthService) {}
+  constructor(
+    private authService: AuthService,
+    private userService: UsersService,
+  ) {}
 
   /**
    * Register a new user using FormData
@@ -77,6 +83,31 @@ export class AuthController {
   @UseInterceptors(AnyFilesInterceptor())
   async login(@Body() formData: any) {
     return this.authService.login(formData.email, formData.password);
+  }
+
+  /**
+   * Update the current user's profile using FormData
+   *
+   * @route POST /auth/update-profile
+   * @param {Request} req - The request object containing the user
+   * @param {FormData} formData - The user data for update sent as FormData
+   * @returns {Promise<any>} The updated user data
+   *
+   * @apiresponse {200} User successfully updated
+   * @apiresponse {401} Unauthorized
+   *
+   * @security JWT
+   */
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Put("update-profile")
+  @HttpCode(HttpStatus.OK)
+  @ApiResponse({ status: 200, description: "User successfully updated" })
+  @ApiResponse({ status: 401, description: "Unauthorized" })
+  @UseInterceptors(AnyFilesInterceptor())
+  async updateProfile(@Request() req, @Body() formData: any) {
+    const userId = req.user.sub;
+    return this.userService.update(userId, formData);
   }
 
   /**
