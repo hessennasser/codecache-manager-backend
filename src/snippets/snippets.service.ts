@@ -7,12 +7,13 @@ import {
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
+import { Repository, In } from "typeorm";
 import { Snippet } from "./schemas/snippet.schema";
 import { User } from "../users/entities/user.entity";
 import { CreateSnippetDto } from "./dto/create-snippet.dto";
 import { UpdateSnippetDto } from "./dto/update-snippet.dto";
 import { validate as uuidValidate } from "uuid";
+import { Document } from "mongoose";
 
 @Injectable()
 export class SnippetsService {
@@ -37,7 +38,7 @@ export class SnippetsService {
 
     await this.updateUserSnippetList(user, savedSnippet.id.toString(), "add");
 
-    return savedSnippet;
+    return this.attachUserToSnippet(savedSnippet, user);
   }
 
   async getAllSnippets(
@@ -48,12 +49,25 @@ export class SnippetsService {
     language?: string,
   ): Promise<{
     snippets: Snippet[];
-    total: number;
-    page: number;
-    limit: number;
+    pagination: {
+      total: number;
+      page: number;
+      limit: number;
+      totalPages: number;
+      hasNextPage: boolean;
+      hasPrevPage: boolean;
+    };
   }> {
     const query = this.buildSnippetQuery(search, tags, language);
-    return this.paginateSnippets(query, page, limit, search);
+    const { snippets, pagination } = await this.paginateSnippets(
+      query,
+      page,
+      limit,
+      search,
+    );
+    const snippetsWithUser = await this.attachUsersToSnippets(snippets);
+
+    return { snippets: snippetsWithUser, pagination };
   }
 
   async getSnippetsByUserId(
@@ -64,14 +78,37 @@ export class SnippetsService {
     tags?: string[],
     language?: string,
   ): Promise<{
-    snippets: Snippet[];
-    total: number;
-    page: number;
-    limit: number;
+    data: {
+      snippets: Snippet[];
+      pagination: {
+        total: number;
+        page: number;
+        limit: number;
+        totalPages: number;
+        hasNextPage: boolean;
+        hasPrevPage: boolean;
+      };
+    };
   }> {
     this.validateUserId(userId);
     const query = this.buildSnippetQuery(search, tags, language, userId);
-    return this.paginateSnippets(query, page, limit, search);
+    const { snippets, pagination } = await this.paginateSnippets(
+      query,
+      page,
+      limit,
+      search,
+    );
+    const user = await this.findUserById(userId);
+    const snippetsWithUser = snippets.map((snippet) =>
+      this.attachUserToSnippet(snippet, user),
+    );
+
+    return {
+      data: {
+        snippets: snippetsWithUser,
+        pagination,
+      },
+    };
   }
 
   async getSnippetById(id: string): Promise<Snippet> {
@@ -80,7 +117,8 @@ export class SnippetsService {
       throw new NotFoundException("Snippet not found");
     }
     await this.incrementSnippetViews(snippet.id);
-    return snippet;
+    const user = await this.findUserById(snippet.userId);
+    return this.attachUserToSnippet(snippet, user);
   }
 
   async updateSnippet(
@@ -104,7 +142,8 @@ export class SnippetsService {
       );
     }
 
-    return updatedSnippet;
+    const user = await this.findUserById(userId);
+    return this.attachUserToSnippet(updatedSnippet, user);
   }
 
   async deleteSnippet(userId: string, id: string): Promise<Snippet> {
@@ -126,23 +165,25 @@ export class SnippetsService {
     const user = await this.findUserById(userId);
     await this.updateUserSnippetList(user, id, "remove");
 
-    return deletedSnippet;
+    return this.attachUserToSnippet(deletedSnippet, user);
   }
 
   async getPopularSnippets(limit: number = 10): Promise<Snippet[]> {
-    return this.snippetModel
+    const snippets = await this.snippetModel
       .find({ isPublic: true })
       .sort({ viewCount: -1 })
       .limit(limit)
       .exec();
+    return this.attachUsersToSnippets(snippets);
   }
 
   async getRecentSnippets(limit: number = 10): Promise<Snippet[]> {
-    return this.snippetModel
+    const snippets = await this.snippetModel
       .find({ isPublic: true })
       .sort({ createdAt: -1 })
       .limit(limit)
       .exec();
+    return this.attachUsersToSnippets(snippets);
   }
 
   async updateSavedSnippets(
@@ -154,12 +195,10 @@ export class SnippetsService {
     if (!user) throw new NotFoundException("User not found");
 
     if (add) {
-      // Add the snippet to savedSnippetIds if it's not already there
       if (!user.savedSnippetIds.includes(snippetId)) {
         user.savedSnippetIds = [...user.savedSnippetIds, snippetId];
       }
     } else {
-      // Remove the snippet from savedSnippetIds if it exists
       user.savedSnippetIds = user.savedSnippetIds.filter(
         (id) => id !== snippetId,
       );
@@ -207,7 +246,9 @@ export class SnippetsService {
       .limit(limit)
       .exec();
 
-    return { snippets, total, page, limit };
+    const snippetsWithUser = await this.attachUsersToSnippets(snippets);
+
+    return { snippets: snippetsWithUser, total, page, limit };
   }
 
   private async incrementSnippetViews(id: string): Promise<Snippet> {
@@ -297,8 +338,14 @@ export class SnippetsService {
   ): Promise<{
     snippets: Snippet[];
     total: number;
-    page: number;
-    limit: number;
+    pagination: {
+      total: number;
+      page: number;
+      limit: number;
+      totalPages: number;
+      hasNextPage: boolean;
+      hasPrevPage: boolean;
+    };
   }> {
     const total = await this.snippetModel.countDocuments(query);
     let snippetQuery = this.snippetModel.find(query);
@@ -306,12 +353,53 @@ export class SnippetsService {
     if (search) {
       snippetQuery = snippetQuery.sort({ score: { $meta: "textScore" } });
     }
+    //  
 
     const snippets = await snippetQuery
       .skip((page - 1) * limit)
       .limit(limit)
       .exec();
 
-    return { snippets, total, page, limit };
+    const totalPages = Math.ceil(total / limit);
+    const hasNextPage = page < totalPages;
+    const hasPrevPage = page > 1;
+
+    return {
+      snippets,
+      total,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages,
+        hasNextPage,
+        hasPrevPage,
+      },
+    };
+  }
+  private async attachUsersToSnippets(snippets: Snippet[]): Promise<Snippet[]> {
+    const userIds = [...new Set(snippets.map((s) => s.userId))];
+    const users = await this.userRepository.find({
+      where: { id: In(userIds) },
+    });
+    return snippets.map((snippet) => {
+      const user = users.find((u) => u.id === snippet.userId);
+      return this.attachUserToSnippet(snippet, user);
+    });
+  }
+
+  private attachUserToSnippet(
+    snippet: Snippet & Document,
+    user: User,
+  ): Snippet {
+    return {
+      ...snippet.toObject(),
+      user: {
+        username: user.username,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+      },
+    };
   }
 }

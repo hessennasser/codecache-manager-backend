@@ -11,8 +11,7 @@ import { Document } from "mongoose";
     },
   },
 })
-
-export class Snippet {
+export class Snippet extends Document {
   @Prop({ required: true, trim: true, maxlength: 100 })
   title: string;
 
@@ -38,7 +37,10 @@ export class Snippet {
   viewCount: number;
 }
 
-export type SnippetDocument = Snippet & Document;
+export interface SnippetDocument extends Snippet, Document {
+  toObject(): Snippet;
+}
+
 export const SnippetSchema = SchemaFactory.createForClass(Snippet);
 
 SnippetSchema.index({
