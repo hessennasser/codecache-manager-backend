@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  Logger,
 } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
@@ -17,6 +18,7 @@ import { Document } from "mongoose";
 
 @Injectable()
 export class SnippetsService {
+  private readonly logger = new Logger(SnippetsService.name);
   constructor(
     @InjectModel(Snippet.name) private snippetModel: Model<Snippet>,
     @InjectRepository(User) private userRepository: Repository<User>,
@@ -58,16 +60,40 @@ export class SnippetsService {
       hasPrevPage: boolean;
     };
   }> {
-    const query = this.buildSnippetQuery(search, tags, language);
-    const { snippets, pagination } = await this.paginateSnippets(
-      query,
-      page,
-      limit,
-      search,
+    this.logger.debug(
+      `getAllSnippets called with page=${page}, limit=${limit}, search=${search}, tags=${tags}, language=${language}`,
     );
-    const snippetsWithUser = await this.attachUsersToSnippets(snippets);
 
-    return { snippets: snippetsWithUser, pagination };
+    const query = this.buildSnippetQuery(search, tags, language);
+    this.logger.debug(`Built query: ${JSON.stringify(query)}`);
+
+    try {
+      const { snippets, pagination } = await this.paginateSnippets(
+        query,
+        page,
+        limit,
+        search,
+      );
+      this.logger.debug(`Pagination result: ${JSON.stringify(pagination)}`);
+      this.logger.debug(`Number of snippets found: ${snippets.length}`);
+
+      if (snippets.length === 0) {
+        this.logger.warn("No snippets found matching the query");
+      }
+
+      const snippetsWithUser = await this.attachUsersToSnippets(snippets);
+      this.logger.debug(
+        `Number of snippets with user attached: ${snippetsWithUser.length}`,
+      );
+
+      return { snippets: snippetsWithUser, pagination };
+    } catch (error) {
+      this.logger.error(
+        `Error in getAllSnippets: ${error.message}`,
+        error.stack,
+      );
+      throw error;
+    }
   }
 
   async getSnippetsByUserId(
@@ -305,7 +331,7 @@ export class SnippetsService {
 
   private buildSnippetQuery(
     search?: string,
-    tags?: string[],
+    tags?: string | string[],
     language?: string,
     userId?: string,
   ): any {
@@ -313,20 +339,28 @@ export class SnippetsService {
 
     if (userId) {
       query.userId = userId;
+    } else {
+      query.isPublic = true;
     }
 
     if (search) {
       query.$text = { $search: search };
     }
 
-    if (tags && tags.length > 0) {
-      query.tags = { $in: tags };
+    if (tags) {
+      if (typeof tags === "string") {
+        tags = tags.split(",").map((tag) => tag.trim());
+      }
+      if (Array.isArray(tags) && tags.length > 0) {
+        query.tags = { $in: tags };
+      }
     }
 
-    if (language) {
+    if (language && language !== "all") {
       query.language = language;
     }
 
+    this.logger.debug(`Built query: ${JSON.stringify(query)}`);
     return query;
   }
 
@@ -353,7 +387,7 @@ export class SnippetsService {
     if (search) {
       snippetQuery = snippetQuery.sort({ score: { $meta: "textScore" } });
     }
-    //  
+    //
 
     const snippets = await snippetQuery
       .skip((page - 1) * limit)
