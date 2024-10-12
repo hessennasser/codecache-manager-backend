@@ -34,20 +34,20 @@ export class SnippetsController {
   @ApiQuery({ name: "limit", required: false, type: Number })
   @ApiQuery({ name: "search", required: false, type: String })
   @ApiQuery({ name: "tags", required: false, type: [String], isArray: true })
-  @ApiQuery({ name: "language", required: false, type: String })
+  @ApiQuery({ name: "programmingLanguage", required: false, type: String })
   async getAllSnippets(
     @Query("page") page: number = 1,
     @Query("limit") limit: number = 10,
     @Query("search") search?: string,
     @Query("tags") tags?: string[],
-    @Query("language") language?: string,
+    @Query("programmingLanguage") programmingLanguage?: string,
   ) {
     return this.snippetsService.getAllSnippets(
       page,
       limit,
       search,
       tags,
-      language,
+      programmingLanguage,
     );
   }
 

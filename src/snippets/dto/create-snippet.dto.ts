@@ -46,11 +46,13 @@ export class CreateSnippetDto {
   )
   tags: string[];
 
-  @ApiProperty({ description: "The programming language of the snippet" })
+  @ApiProperty({
+    description: "The programming programmingLanguage of the snippet",
+  })
   @IsNotEmpty()
   @IsString()
   @Transform(({ value }: TransformFnParams) => value?.toLowerCase().trim())
-  language: string;
+  programmingLanguage: string;
 
   @ApiProperty({
     description: "Whether the snippet is public or private",

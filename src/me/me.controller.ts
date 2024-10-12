@@ -61,14 +61,14 @@ export class MeController {
   @ApiQuery({ name: "limit", required: false, type: Number })
   @ApiQuery({ name: "search", required: false, type: String })
   @ApiQuery({ name: "tags", required: false, type: [String], isArray: true })
-  @ApiQuery({ name: "language", required: false, type: String })
+  @ApiQuery({ name: "programmingLanguage", required: false, type: String })
   async getMySnippets(
     @Request() req,
     @Query("page") page: number = 1,
     @Query("limit") limit: number = 10,
     @Query("search") search?: string,
     @Query("tags") tags?: string[],
-    @Query("language") language?: string,
+    @Query("programmingLanguage") programmingLanguage?: string,
   ) {
     const userId = req.user.sub;
     return this.snippetsService.getSnippetsByUserId(
@@ -77,7 +77,7 @@ export class MeController {
       limit,
       search,
       tags,
-      language,
+      programmingLanguage,
     );
   }
 
@@ -183,7 +183,7 @@ export class MeController {
     @Query("limit") limit: number = 10,
     @Query("search") search?: string,
     @Query("tags") tags?: string[],
-    @Query("language") language?: string,
+    @Query("programmingLanguage") programmingLanguage?: string,
   ) {
     const savedSnippets = await this.snippetsService.getSavedSnippets(
       userId,
@@ -191,7 +191,7 @@ export class MeController {
       limit,
       search,
       tags,
-      language,
+      programmingLanguage,
     );
     return savedSnippets;
   }

@@ -10,6 +10,7 @@ import { Model } from "mongoose";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, In } from "typeorm";
 import { Snippet } from "./schemas/snippet.schema";
+import { Tag } from "src/snippets/schemas/tag.schema";
 import { User } from "../users/entities/user.entity";
 import { CreateSnippetDto } from "./dto/create-snippet.dto";
 import { UpdateSnippetDto } from "./dto/update-snippet.dto";
@@ -20,9 +21,15 @@ import { Document } from "mongoose";
 export class SnippetsService {
   private readonly logger = new Logger(SnippetsService.name);
   constructor(
+    @InjectModel(Tag.name) private tagModel: Model<Tag>,
     @InjectModel(Snippet.name) private snippetModel: Model<Snippet>,
     @InjectRepository(User) private userRepository: Repository<User>,
   ) {}
+
+  async onModuleInit() {
+    await this.snippetModel.syncIndexes();
+    console.log("Snippet indexes synced");
+  }
 
   async createSnippet(
     userId: string,
@@ -31,16 +38,18 @@ export class SnippetsService {
     this.validateUserId(userId);
 
     const user = await this.findUserById(userId);
+    const tagIds = await this.handleTags(createSnippetDto.tags);
 
     const newSnippet = new this.snippetModel({
       ...createSnippetDto,
       userId: userId,
+      tags: tagIds,
     });
     const savedSnippet = await newSnippet.save();
 
     await this.updateUserSnippetList(user, savedSnippet.id.toString(), "add");
 
-    return this.attachUserToSnippet(savedSnippet, user);
+    return this.attachUserToSnippet(await savedSnippet.populate("tags"), user);
   }
 
   async getAllSnippets(
@@ -48,7 +57,7 @@ export class SnippetsService {
     limit: number = 10,
     search?: string,
     tags?: string[],
-    language?: string,
+    programmingLanguage?: string,
   ): Promise<{
     snippets: Snippet[];
     pagination: {
@@ -61,10 +70,10 @@ export class SnippetsService {
     };
   }> {
     this.logger.debug(
-      `getAllSnippets called with page=${page}, limit=${limit}, search=${search}, tags=${tags}, language=${language}`,
+      `getAllSnippets called with page=${page}, limit=${limit}, search=${search}, tags=${tags}, programmingLanguage=${programmingLanguage}`,
     );
 
-    const query = this.buildSnippetQuery(search, tags, language);
+    const query = this.buildSnippetQuery(search, tags, programmingLanguage);
     this.logger.debug(`Built query: ${JSON.stringify(query)}`);
 
     try {
@@ -102,7 +111,7 @@ export class SnippetsService {
     limit: number = 10,
     search?: string,
     tags?: string[],
-    language?: string,
+    programmingLanguage?: string,
   ): Promise<{
     data: {
       snippets: Snippet[];
@@ -117,7 +126,12 @@ export class SnippetsService {
     };
   }> {
     this.validateUserId(userId);
-    const query = this.buildSnippetQuery(search, tags, language, userId);
+    const query = this.buildSnippetQuery(
+      search,
+      tags,
+      programmingLanguage,
+      userId,
+    );
     const { snippets, pagination } = await this.paginateSnippets(
       query,
       page,
@@ -138,7 +152,10 @@ export class SnippetsService {
   }
 
   async getSnippetById(id: string): Promise<Snippet> {
-    const snippet = await this.snippetModel.findById(id).exec();
+    const snippet = await this.snippetModel
+      .findById(id)
+      .populate("tags")
+      .exec();
     if (!snippet) {
       throw new NotFoundException("Snippet not found");
     }
@@ -154,19 +171,31 @@ export class SnippetsService {
   ): Promise<Snippet> {
     this.validateUserId(userId);
 
+    const snippet = await this.snippetModel.findOne({
+      _id: id,
+      userId: userId,
+    });
+    if (!snippet) {
+      throw new NotFoundException(
+        "Snippet not found or you do not have permission to update it",
+      );
+    }
+
+    if (updateSnippetDto.tags) {
+      const oldTags = snippet.tags.map((tag) => tag.toString());
+      const newTagIds = await this.handleTags(updateSnippetDto.tags);
+      await this.updateTagUsage(oldTags, newTagIds);
+      updateSnippetDto.tags = newTagIds;
+    }
+
     const updatedSnippet = await this.snippetModel
       .findOneAndUpdate(
         { _id: id, userId: userId },
         { $set: updateSnippetDto },
         { new: true },
       )
+      .populate("tags")
       .exec();
-
-    if (!updatedSnippet) {
-      throw new NotFoundException(
-        "Snippet not found or you do not have permission to update it",
-      );
-    }
 
     const user = await this.findUserById(userId);
     return this.attachUserToSnippet(updatedSnippet, user);
@@ -175,18 +204,30 @@ export class SnippetsService {
   async deleteSnippet(userId: string, id: string): Promise<Snippet> {
     this.validateUserId(userId);
 
+    const snippet = await this.snippetModel
+      .findOne({
+        _id: id,
+        userId: userId,
+      })
+      .populate("tags");
+    if (!snippet) {
+      throw new NotFoundException(
+        "Snippet not found or you do not have permission to delete it",
+      );
+    }
+
+    await this.updateTagUsage(
+      snippet.tags.map((tag) => tag._id.toString()),
+      [],
+    );
+
     const deletedSnippet = await this.snippetModel
       .findOneAndDelete({
         _id: id,
         userId: userId,
       })
+      .populate("tags")
       .exec();
-
-    if (!deletedSnippet) {
-      throw new NotFoundException(
-        "Snippet not found or you do not have permission to delete it",
-      );
-    }
 
     const user = await this.findUserById(userId);
     await this.updateUserSnippetList(user, id, "remove");
@@ -199,6 +240,7 @@ export class SnippetsService {
       .find({ isPublic: true })
       .sort({ viewCount: -1 })
       .limit(limit)
+      .populate("tags")
       .exec();
     return this.attachUsersToSnippets(snippets);
   }
@@ -208,6 +250,7 @@ export class SnippetsService {
       .find({ isPublic: true })
       .sort({ createdAt: -1 })
       .limit(limit)
+      .populate("tags")
       .exec();
     return this.attachUsersToSnippets(snippets);
   }
@@ -239,7 +282,7 @@ export class SnippetsService {
     limit: number = 10,
     search?: string,
     tags?: string[],
-    language?: string,
+    programmingLanguage?: string,
   ): Promise<{
     snippets: Snippet[];
     total: number;
@@ -261,8 +304,8 @@ export class SnippetsService {
       query.tags = { $in: tags };
     }
 
-    if (language) {
-      query.language = language;
+    if (programmingLanguage) {
+      query.programmingLanguage = programmingLanguage;
     }
 
     const total = await this.snippetModel.countDocuments(query);
@@ -270,6 +313,7 @@ export class SnippetsService {
       .find(query)
       .skip((page - 1) * limit)
       .limit(limit)
+      .populate("tags")
       .exec();
 
     const snippetsWithUser = await this.attachUsersToSnippets(snippets);
@@ -277,9 +321,54 @@ export class SnippetsService {
     return { snippets: snippetsWithUser, total, page, limit };
   }
 
+  private async handleTags(tagNames: string[]): Promise<string[]> {
+    const uniqueTagNames = [
+      ...new Set(tagNames.map((name) => name.toLowerCase().trim())),
+    ];
+    const tagIds = [];
+
+    for (const tagName of uniqueTagNames) {
+      let tag = await this.tagModel.findOne({ name: tagName });
+      if (!tag) {
+        tag = await this.tagModel.create({ name: tagName });
+      }
+      tag.usageCount += 1;
+      await tag.save();
+      tagIds.push(tag._id);
+    }
+
+    return tagIds;
+  }
+
+  private async updateTagUsage(
+    oldTagIds: string[],
+    newTagIds: string[],
+  ): Promise<void> {
+    const tagsToDecrement = oldTagIds.filter((id) => !newTagIds.includes(id));
+    const tagsToIncrement = newTagIds.filter((id) => !oldTagIds.includes(id));
+
+    if (tagsToDecrement.length > 0) {
+      await this.tagModel.updateMany(
+        { _id: { $in: tagsToDecrement } },
+        { $inc: { usageCount: -1 } },
+      );
+    }
+
+    if (tagsToIncrement.length > 0) {
+      await this.tagModel.updateMany(
+        { _id: { $in: tagsToIncrement } },
+        { $inc: { usageCount: 1 } },
+      );
+    }
+
+    // Remove tags with usage count 0
+    await this.tagModel.deleteMany({ usageCount: 0 });
+  }
+
   private async incrementSnippetViews(id: string): Promise<Snippet> {
     const updatedSnippet = await this.snippetModel
       .findByIdAndUpdate(id, { $inc: { viewCount: 1 } }, { new: true })
+      .populate("tags")
       .exec();
 
     if (!updatedSnippet) {
@@ -332,7 +421,7 @@ export class SnippetsService {
   private buildSnippetQuery(
     search?: string,
     tags?: string | string[],
-    language?: string,
+    programmingLanguage?: string,
     userId?: string,
   ): any {
     const query: any = {};
@@ -356,8 +445,8 @@ export class SnippetsService {
       }
     }
 
-    if (language && language !== "all") {
-      query.language = language;
+    if (programmingLanguage && programmingLanguage !== "all") {
+      query.programmingLanguage = programmingLanguage;
     }
 
     this.logger.debug(`Built query: ${JSON.stringify(query)}`);
@@ -382,12 +471,11 @@ export class SnippetsService {
     };
   }> {
     const total = await this.snippetModel.countDocuments(query);
-    let snippetQuery = this.snippetModel.find(query);
+    let snippetQuery = this.snippetModel.find(query).populate("tags");
 
     if (search) {
       snippetQuery = snippetQuery.sort({ score: { $meta: "textScore" } });
     }
-    //
 
     const snippets = await snippetQuery
       .skip((page - 1) * limit)
@@ -426,14 +514,17 @@ export class SnippetsService {
     snippet: Snippet & Document,
     user: User,
   ): Snippet {
+    const snippetObj = snippet.toObject();
+
     return {
-      ...snippet.toObject(),
+      ...snippetObj,
       user: {
         username: user.username,
         email: user.email,
         firstName: user.firstName,
         lastName: user.lastName,
       },
+      tags: snippetObj.tags,
     };
   }
 }

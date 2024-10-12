@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
-import { Document } from "mongoose";
+import { Document, Types } from "mongoose";
+import { Tag } from "./tag.schema";
 
 @Schema({
   timestamps: true,
@@ -21,11 +22,11 @@ export class Snippet extends Document {
   @Prop({ required: true })
   content: string;
 
-  @Prop([{ type: String, lowercase: true, trim: true }])
-  tags: string[];
+  @Prop([{ type: Types.ObjectId, ref: "Tag" }])
+  tags: Types.ObjectId[];
 
   @Prop({ required: true, lowercase: true, trim: true })
-  language: string;
+  programmingLanguage: string; // Changed from 'programmingLanguage' to 'programmingLanguage'
 
   @Prop({ required: true, type: String, index: true })
   userId: string;
@@ -37,15 +38,22 @@ export class Snippet extends Document {
   viewCount: number;
 }
 
-export interface SnippetDocument extends Snippet, Document {
-  toObject(): Snippet;
-}
-
 export const SnippetSchema = SchemaFactory.createForClass(Snippet);
 
-SnippetSchema.index({
-  title: "text",
-  description: "text",
-  content: "text",
-  tags: "text",
-});
+SnippetSchema.index(
+  {
+    title: "text",
+    description: "text",
+    content: "text",
+  },
+  {
+    weights: {
+      title: 10,
+      description: 5,
+      content: 1,
+    },
+    name: "TextSearchIndex",
+  },
+);
+
+SnippetSchema.index({ programmingLanguage: 1 });
