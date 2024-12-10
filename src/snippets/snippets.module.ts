@@ -3,19 +3,15 @@ import { MongooseModule } from "@nestjs/mongoose";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { SnippetsController } from "./snippets.controller";
 import { SnippetsService } from "./snippets.service";
-import { Snippet, SnippetSchema } from "./schemas/snippet.schema";
 import { User } from "../users/entities/user.entity";
 import { AuthModule } from "../auth/auth.module";
 import { UsersModule } from "../users/users.module";
-import { Tag, TagSchema } from "src/snippets/schemas/tag.schema";
+import { Snippet } from "./entities/snippet.entity";
+import { Tag } from "./entities/tag.entity";
 
 @Module({
   imports: [
-    MongooseModule.forFeature([
-      { name: Snippet.name, schema: SnippetSchema },
-      { name: Tag.name, schema: TagSchema },
-    ]),
-    TypeOrmModule.forFeature([User]),
+    TypeOrmModule.forFeature([User, Snippet, Tag]),
     AuthModule,
     UsersModule,
   ],
@@ -23,7 +19,6 @@ import { Tag, TagSchema } from "src/snippets/schemas/tag.schema";
   providers: [SnippetsService],
   exports: [
     SnippetsService,
-    MongooseModule.forFeature([{ name: Tag.name, schema: TagSchema }]),
   ],
 })
 export class SnippetsModule {}

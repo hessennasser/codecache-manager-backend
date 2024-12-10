@@ -4,8 +4,12 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
+  OneToMany,
+  ManyToMany,
+  JoinTable,
 } from "typeorm";
 import { Exclude } from "class-transformer";
+import { Snippet } from "src/snippets/entities/snippet.entity";
 
 @Entity("users")
 export class User {
@@ -52,9 +56,14 @@ export class User {
   @UpdateDateColumn()
   updatedAt: Date;
 
-  @Column("simple-array", { nullable: true })
-  snippetIds: string[];
+  @OneToMany(() => Snippet, (snippet) => snippet.user)
+  snippets: Snippet[];
 
-  @Column("simple-array", { nullable: true })
-  savedSnippetIds: string[];
+  @ManyToMany(() => Snippet)
+  @JoinTable({
+    name: "user_saved_snippets",
+    joinColumn: { name: "userId", referencedColumnName: "id" },
+    inverseJoinColumn: { name: "snippetId", referencedColumnName: "id" },
+  })
+  savedSnippets: Snippet[];
 }

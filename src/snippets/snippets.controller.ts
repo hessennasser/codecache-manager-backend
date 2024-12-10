@@ -5,6 +5,7 @@ import {
   Query,
   UseGuards,
   NotFoundException,
+  Request,
 } from "@nestjs/common";
 import { SnippetsService } from "./snippets.service";
 import {
@@ -15,7 +16,9 @@ import {
   ApiResponse,
 } from "@nestjs/swagger";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
-import { Snippet } from "./schemas/snippet.schema";
+import { Snippet } from "./entities/snippet.entity";
+import { PaginationDto } from "./dto/pagination.dto";
+import { SnippetFiltersDto } from "./dto/snippet-filters.dto";
 
 @ApiTags("snippets")
 @Controller("snippets")
@@ -35,20 +38,23 @@ export class SnippetsController {
   @ApiQuery({ name: "search", required: false, type: String })
   @ApiQuery({ name: "tags", required: false, type: [String], isArray: true })
   @ApiQuery({ name: "programmingLanguage", required: false, type: String })
-  async getAllSnippets(
-    @Query("page") page: number = 1,
-    @Query("limit") limit: number = 10,
-    @Query("search") search?: string,
-    @Query("tags") tags?: string[],
-    @Query("programmingLanguage") programmingLanguage?: string,
-  ) {
-    return this.snippetsService.getAllSnippets(
-      page,
-      limit,
-      search,
-      tags,
-      programmingLanguage,
-    );
+  async getAllSnippets(@Query() query: PaginationDto & SnippetFiltersDto) {
+    const paginationDto: PaginationDto = {
+      page: query.page ? Number(query.page) : 1,
+      limit: query.limit ? Number(query.limit) : 10,
+    };
+
+    const filtersDto: SnippetFiltersDto = {
+      search: query.search,
+      tags: Array.isArray(query.tags)
+        ? query.tags
+        : query.tags
+          ? [query.tags]
+          : undefined,
+      programmingLanguage: query.programmingLanguage,
+    };
+
+    return this.snippetsService.getAllSnippets(paginationDto, filtersDto);
   }
 
   @Get("popular")
@@ -59,8 +65,8 @@ export class SnippetsController {
     type: [Snippet],
   })
   @ApiQuery({ name: "limit", required: false, type: Number })
-  async getPopularSnippets(@Query("limit") limit: number = 10) {
-    return this.snippetsService.getPopularSnippets(limit);
+  async getPopularSnippets(@Query("limit") limit: string = "10") {
+    return this.snippetsService.getPopularSnippets(Number(limit));
   }
 
   @Get("recent")
@@ -71,8 +77,8 @@ export class SnippetsController {
     type: [Snippet],
   })
   @ApiQuery({ name: "limit", required: false, type: Number })
-  async getRecentSnippets(@Query("limit") limit: number = 10) {
-    return this.snippetsService.getRecentSnippets(limit);
+  async getRecentSnippets(@Query("limit") limit: string = "10") {
+    return this.snippetsService.getRecentSnippets(Number(limit));
   }
 
   @Get(":id")

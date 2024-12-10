@@ -3,7 +3,6 @@ import {
   Controller,
   Delete,
   Get,
-  NotFoundException,
   Param,
   Patch,
   Post,
@@ -24,8 +23,10 @@ import {
 } from "@nestjs/swagger";
 import { UpdateSnippetDto } from "../snippets/dto/update-snippet.dto";
 import { CreateSnippetDto } from "../snippets/dto/create-snippet.dto";
-import { Snippet } from "../snippets/schemas/snippet.schema";
 import { User } from "../users/entities/user.entity";
+import { Snippet } from "src/snippets/entities/snippet.entity";
+import { PaginationDto } from "../snippets/dto/pagination.dto";
+import { SnippetFiltersDto } from "../snippets/dto/snippet-filters.dto";
 
 @ApiTags("me")
 @Controller("me")
@@ -64,20 +65,26 @@ export class MeController {
   @ApiQuery({ name: "programmingLanguage", required: false, type: String })
   async getMySnippets(
     @Request() req,
-    @Query("page") page: number = 1,
-    @Query("limit") limit: number = 10,
-    @Query("search") search?: string,
-    @Query("tags") tags?: string[],
-    @Query("programmingLanguage") programmingLanguage?: string,
+    @Query() query: PaginationDto & SnippetFiltersDto,
   ) {
     const userId = req.user.sub;
+    const paginationDto: PaginationDto = {
+      page: query.page ? Number(query.page) : 1,
+      limit: query.limit ? Number(query.limit) : 10,
+    };
+    const filtersDto: SnippetFiltersDto = {
+      search: query.search,
+      tags: Array.isArray(query.tags)
+        ? query.tags
+        : query.tags
+          ? [query.tags]
+          : undefined,
+      programmingLanguage: query.programmingLanguage,
+    };
     return this.snippetsService.getSnippetsByUserId(
       userId,
-      page,
-      limit,
-      search,
-      tags,
-      programmingLanguage,
+      paginationDto,
+      filtersDto,
     );
   }
 
@@ -93,6 +100,7 @@ export class MeController {
     @Body() createSnippetDto: CreateSnippetDto,
   ) {
     const userId = req.user.sub;
+    console.log(createSnippetDto, "createSnippetDto");
     return this.snippetsService.createSnippet(userId, createSnippetDto);
   }
 
@@ -110,17 +118,7 @@ export class MeController {
     @Body() updateSnippetDto: UpdateSnippetDto,
   ) {
     const userId = req.user.sub;
-    const updatedSnippet = await this.snippetsService.updateSnippet(
-      userId,
-      id,
-      updateSnippetDto,
-    );
-    if (!updatedSnippet) {
-      throw new NotFoundException(
-        "Snippet not found or you do not have permission to update it",
-      );
-    }
-    return updatedSnippet;
+    return this.snippetsService.updateSnippet(userId, id, updateSnippetDto);
   }
 
   @Delete("snippets/:id")
@@ -132,12 +130,7 @@ export class MeController {
   @ApiResponse({ status: 404, description: "Snippet not found" })
   async deleteSnippet(@Request() req, @Param("id") id: string) {
     const userId = req.user.sub;
-    const deletedSnippet = await this.snippetsService.deleteSnippet(userId, id);
-    if (!deletedSnippet) {
-      throw new NotFoundException(
-        "Snippet not found or you do not have permission to delete it",
-      );
-    }
+    await this.snippetsService.deleteSnippet(userId, id);
     return { message: "Snippet deleted successfully" };
   }
 
@@ -170,29 +163,39 @@ export class MeController {
     };
   }
 
-  @Get("users/:userId/saved-snippets")
-  @ApiOperation({ summary: "Get saved snippets for a user" })
+  @Get("saved-snippets")
+  @ApiOperation({ summary: "Get saved snippets for the current user" })
   @ApiResponse({
     status: 200,
     description: "Successfully retrieved saved snippets",
   })
-  @ApiResponse({ status: 404, description: "User not found" })
+  @ApiQuery({ name: "page", required: false, type: Number })
+  @ApiQuery({ name: "limit", required: false, type: Number })
+  @ApiQuery({ name: "search", required: false, type: String })
+  @ApiQuery({ name: "tags", required: false, type: [String], isArray: true })
+  @ApiQuery({ name: "programmingLanguage", required: false, type: String })
   async getSavedSnippets(
-    @Param("userId") userId: string,
-    @Query("page") page: number = 1,
-    @Query("limit") limit: number = 10,
-    @Query("search") search?: string,
-    @Query("tags") tags?: string[],
-    @Query("programmingLanguage") programmingLanguage?: string,
+    @Request() req,
+    @Query() query: PaginationDto & SnippetFiltersDto,
   ) {
-    const savedSnippets = await this.snippetsService.getSavedSnippets(
+    const userId = req.user.sub;
+    const paginationDto: PaginationDto = {
+      page: query.page ? Number(query.page) : 1,
+      limit: query.limit ? Number(query.limit) : 10,
+    };
+    const filtersDto: SnippetFiltersDto = {
+      search: query.search,
+      tags: Array.isArray(query.tags)
+        ? query.tags
+        : query.tags
+          ? [query.tags]
+          : undefined,
+      programmingLanguage: query.programmingLanguage,
+    };
+    return this.snippetsService.getSavedSnippets(
       userId,
-      page,
-      limit,
-      search,
-      tags,
-      programmingLanguage,
+      paginationDto,
+      filtersDto,
     );
-    return savedSnippets;
   }
 }
