@@ -2,10 +2,9 @@ services:
   app:
     container_name: codecache-app
     build: .
-    expose:
+    ports:
       - "3100:3000"
     environment:
-      - NODE_ENV=production
       - DATABASE_HOST=db
       - DATABASE_PORT=5432
       - DATABASE_USER=postgres
@@ -13,9 +12,7 @@ services:
       - DATABASE_NAME=codecache
       - secret_key=DpHMndfxXbGxsJJhZorDYA3JjcBAfXKo
     depends_on:
-      db:
-        condition: service_healthy
-    restart: always
+      - db
     networks:
       - codeCache
 
@@ -27,13 +24,8 @@ services:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=password
       - POSTGRES_DB=codecache
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
     ports:
-      - "5444:5432"
+      - "5433:5432"
     volumes:
       - ./codeCache-pgdata:/var/lib/codeCache-postgresql/data
     networks:
