@@ -1,4 +1,21 @@
 services:
+  app:
+    container_name: codecache-app
+    build: .
+    ports:
+      - "3100:3000"
+    environment:
+      - DATABASE_HOST=db
+      - DATABASE_PORT=5432
+      - DATABASE_USER=postgres
+      - DATABASE_PASSWORD=password
+      - DATABASE_NAME=codecache
+      - secret_key=DpHMndfxXbGxsJJhZorDYA3JjcBAfXKo
+    depends_on:
+      - db
+    networks:
+      - codeCache
+
   db:
     container_name: codeCache-pg-container
     image: postgres:16
@@ -14,24 +31,8 @@ services:
     networks:
       - codeCache
 
-  mongo:
-    container_name: codeCache-mongo-container
-    image: mongo:8.0
-    restart: always
-    environment:
-      - MONGO_INITDB_ROOT_USERNAME=root
-      - MONGO_INITDB_ROOT_PASSWORD=password
-      - MONGO_INITDB_DATABASE=codecache
-    ports:
-      - "27017:27017"
-    volumes:
-      - ./codeCache-mongodata:/data/db
-    networks:
-      - codeCache
-
 volumes:
   codeCache-pgdata:
-  codeCache-mongodata:
 
 networks:
   codeCache:
