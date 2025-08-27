@@ -16,14 +16,17 @@ services:
     expose:
       - "3000"
     environment:
+      - NODE_ENV=production
       - DATABASE_HOST=db
-      - DATABASE_PORT=5444
+      - DATABASE_PORT=5432
       - DATABASE_USER=postgres
       - DATABASE_PASSWORD=password
       - DATABASE_NAME=codecache
       - secret_key=DpHMndfxXbGxsJJhZorDYA3JjcBAfXKo
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+    restart: always
     networks:
       - codeCache
 
@@ -35,6 +38,11 @@ services:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=password
       - POSTGRES_DB=codecache
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     ports:
       - "5444:5432"
     volumes:
