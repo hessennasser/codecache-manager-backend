@@ -44,12 +44,6 @@ export class Snippet {
   @Index()
   userId: string;
 
-  @Column({ default: false })
-  isPublic: boolean;
-
-  @Column({ default: 0 })
-  viewCount: number;
-
   @CreateDateColumn()
   createdAt: Date;
 

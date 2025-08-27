@@ -53,12 +53,4 @@ export class CreateSnippetDto {
   @IsString()
   @Transform(({ value }: TransformFnParams) => value?.toLowerCase().trim())
   programmingLanguage: string;
-
-  @ApiProperty({
-    description: "Whether the snippet is public or private",
-    default: false,
-  })
-  @IsOptional()
-  @IsBoolean()
-  isPublic?: boolean;
 }

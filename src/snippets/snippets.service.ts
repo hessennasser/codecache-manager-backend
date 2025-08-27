@@ -143,7 +143,6 @@ export class SnippetsService {
       throw new NotFoundException("Snippet not found");
     }
 
-    await this.incrementSnippetViews(snippet);
     return snippet;
   }
 
@@ -188,117 +187,6 @@ export class SnippetsService {
 
     await this.updateTagUsage(snippet.tags, []);
     await this.snippetRepository.remove(snippet);
-  }
-
-  async getPopularSnippets(limit: number = 10): Promise<Snippet[]> {
-    return this.snippetRepository.find({
-      where: { isPublic: true },
-      order: { viewCount: "DESC" },
-      take: limit,
-      relations: ["tags", "user"],
-    });
-  }
-
-  async getRecentSnippets(limit: number = 10): Promise<Snippet[]> {
-    return this.snippetRepository.find({
-      where: { isPublic: true },
-      order: { createdAt: "DESC" },
-      take: limit,
-      relations: ["tags", "user"],
-    });
-  }
-
-  async updateSavedSnippets(
-    userId: string,
-    snippetId: string,
-    add: boolean,
-  ): Promise<void> {
-    const user = await this.userRepository.findOne({
-      where: { id: userId },
-      relations: ["savedSnippets"],
-    });
-
-    if (!user) {
-      throw new NotFoundException("User not found");
-    }
-
-    const snippet = await this.snippetRepository.findOne({
-      where: { id: snippetId },
-    });
-
-    if (!snippet) {
-      throw new NotFoundException("Snippet not found");
-    }
-
-    if (add) {
-      user.savedSnippets.push(snippet);
-    } else {
-      user.savedSnippets = user.savedSnippets.filter((s) => s.id !== snippetId);
-    }
-
-    await this.userRepository.save(user);
-  }
-
-  async getSavedSnippets(
-    userId: string,
-    paginationDto: PaginationDto,
-    filtersDto: SnippetFiltersDto,
-  ): Promise<{
-    snippets: Snippet[];
-    pagination: PaginationDto & { total: number; totalPages: number };
-  }> {
-    const { page, limit } = paginationDto;
-    const { search, tags, programmingLanguage } = filtersDto;
-
-    const pageNumber = Number(page);
-    const limitNumber = Number(limit);
-
-    const user = await this.userRepository.findOne({
-      where: { id: userId },
-      relations: ["savedSnippets", "savedSnippets.tags", "savedSnippets.user"],
-    });
-
-    if (!user) {
-      throw new NotFoundException("User not found");
-    }
-
-    let filteredSnippets = user.savedSnippets;
-
-    if (search) {
-      filteredSnippets = filteredSnippets.filter(
-        (s) =>
-          s.title.includes(search) ||
-          s.description?.includes(search) ||
-          s.content.includes(search),
-      );
-    }
-
-    if (tags && tags.length > 0) {
-      filteredSnippets = filteredSnippets.filter((s) =>
-        s.tags.some((t) => tags.includes(t.name)),
-      );
-    }
-
-    if (programmingLanguage) {
-      filteredSnippets = filteredSnippets.filter(
-        (s) => s.programmingLanguage === programmingLanguage,
-      );
-    }
-
-    const total = filteredSnippets.length;
-    const snippets = filteredSnippets.slice(
-      (pageNumber - 1) * limitNumber,
-      pageNumber * limitNumber,
-    );
-
-    return {
-      snippets,
-      pagination: {
-        ...paginationDto,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
-    };
   }
 
   private async handleTags(tagNames: string[]): Promise<Tag[]> {
@@ -350,11 +238,6 @@ export class SnippetsService {
     await this.tagRepository.delete({ usageCount: 0 });
   }
 
-  private async incrementSnippetViews(snippet: Snippet): Promise<Snippet> {
-    snippet.viewCount += 1;
-    return this.snippetRepository.save(snippet);
-  }
-
   private async findUserById(userId: string): Promise<User> {
     this.validateUserId(userId);
     const user = await this.userRepository.findOne({ where: { id: userId } });
@@ -378,8 +261,6 @@ export class SnippetsService {
 
     if (userId) {
       query.userId = userId;
-    } else {
-      query.isPublic = true;
     }
 
     if (search) {

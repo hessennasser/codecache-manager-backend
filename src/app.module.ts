@@ -7,7 +7,6 @@ import { AuthModule } from "./auth/auth.module";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { SnippetsModule } from "./snippets/snippets.module";
 import { MeModule } from "./me/me.module";
-import { HomeModule } from "./home/home.module";
 import typeormConfig from "./config/typeorm";
 import { MulterModule } from "@nestjs/platform-express";
 
@@ -30,7 +29,6 @@ import { MulterModule } from "@nestjs/platform-express";
     AuthModule,
     SnippetsModule,
     MeModule,
-    HomeModule,
   ],
   controllers: [AppController],
   providers: [AppService],

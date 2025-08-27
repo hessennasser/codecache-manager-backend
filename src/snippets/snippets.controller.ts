@@ -57,30 +57,6 @@ export class SnippetsController {
     return this.snippetsService.getAllSnippets(paginationDto, filtersDto);
   }
 
-  @Get("popular")
-  @ApiOperation({ summary: "Get popular snippets" })
-  @ApiResponse({
-    status: 200,
-    description: "Return popular snippets",
-    type: [Snippet],
-  })
-  @ApiQuery({ name: "limit", required: false, type: Number })
-  async getPopularSnippets(@Query("limit") limit: string = "10") {
-    return this.snippetsService.getPopularSnippets(Number(limit));
-  }
-
-  @Get("recent")
-  @ApiOperation({ summary: "Get recent snippets" })
-  @ApiResponse({
-    status: 200,
-    description: "Return recent snippets",
-    type: [Snippet],
-  })
-  @ApiQuery({ name: "limit", required: false, type: Number })
-  async getRecentSnippets(@Query("limit") limit: string = "10") {
-    return this.snippetsService.getRecentSnippets(Number(limit));
-  }
-
   @Get(":id")
   @ApiOperation({ summary: "Get a snippet by ID" })
   @ApiResponse({

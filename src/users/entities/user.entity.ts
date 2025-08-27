@@ -58,12 +58,4 @@ export class User {
 
   @OneToMany(() => Snippet, (snippet) => snippet.user)
   snippets: Snippet[];
-
-  @ManyToMany(() => Snippet)
-  @JoinTable({
-    name: "user_saved_snippets",
-    joinColumn: { name: "userId", referencedColumnName: "id" },
-    inverseJoinColumn: { name: "snippetId", referencedColumnName: "id" },
-  })
-  savedSnippets: Snippet[];
 }
